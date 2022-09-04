@@ -8,7 +8,6 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.transforms.functional import resize
 from torchvision.io import read_image, ImageReadMode
-from sklearn.utils import shuffle
 
 
 def get_metadata(path: str):
@@ -138,17 +137,12 @@ class SequentialTaskSampler:
             self.query_labels += [self.shuffle_classes.index(cls)] * len(self.query_pools[cls])
 
         self.support_loader = self._get_loader(self.support_imgs, self.support_labels, min(len(self.support_imgs), 128))
-        self.query_loader = self._get_loader(self.query_imgs, self.query_labels,
-                                             self.n_sample_query, max_samples=self.n_query)
+        self.query_loader = self._get_loader(self.query_imgs, self.query_labels, self.n_sample_query)
 
         self.support_iter = iter(self.support_loader)
         self.query_iter = iter(self.query_loader)
 
-    def _get_loader(self, imgs, labels, batch_size, max_samples=None):
-        imgs, labels = shuffle(imgs, labels)
-        if max_samples is not None:
-            imgs = imgs[:max_samples]
-            labels = labels[:max_samples]
+    def _get_loader(self, imgs, labels, batch_size):
         dataset = MiniImagenetDataset(imgs, labels)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=2)
         return dataloader
@@ -205,12 +199,12 @@ class EpisodeSampler:
             self.query_labels += [self.classes.index(cls)] * len(imgs[cls])
 
         self.support_loader = self._get_loader(self.support_imgs, self.support_labels, min(len(self.support_imgs), 128))
-        self.query_loader = self._get_loader(self.query_imgs, self.query_labels, 100)
+        self.query_loader = self._get_loader(self.query_imgs, self.query_labels, 100, transform=False)
 
         self.support_iter = iter(self.support_loader)
 
-    def _get_loader(self, imgs, labels, batch_size):
-        dataset = MiniImagenetDataset(imgs, labels)
+    def _get_loader(self, imgs, labels, batch_size, transform=True):
+        dataset = MiniImagenetDataset(imgs, labels, transform=transform)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=2)
         return dataloader
 

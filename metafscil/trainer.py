@@ -5,7 +5,7 @@ from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from .utils import disable_grad, compute_accuracy
+from .utils import enable_grad, disable_grad, compute_accuracy
 
 
 class Pretrain:
@@ -78,12 +78,13 @@ class MetaFSCIL:
         self.device = args.device
 
         self.loss = nn.CrossEntropyLoss()
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
 
         self.writer = SummaryWriter(f"{args.log_dir}/{args.model}")
 
     def init_classifier(self, base_classes: int = 20):
         self.previous_classifier = None
-        self.model.classifier = nn.Linear(self.model.classifier.in_features, base_classes).to(self.device)
+        self.model.classifier = nn.Linear(self.model.classifier.in_features, base_classes, bias=False).to(self.device)
 
     def backup_classifier(self):
         self.previous_classifier = copy.deepcopy(self.model.classifier)
@@ -91,7 +92,7 @@ class MetaFSCIL:
     def accumulate_classifier(self):
         current_classifier = copy.deepcopy(self.fast_model.classifier)
         out_features = self.previous_classifier.out_features + current_classifier.out_features
-        self.fast_model.classifier = nn.Linear(current_classifier.in_features, out_features).to(self.device)
+        self.fast_model.classifier = nn.Linear(current_classifier.in_features, out_features, bias=False).to(self.device)
         self.fast_model.classifier.weight.data = torch.concat(
             (self.previous_classifier.weight.data, current_classifier.weight.data), dim=0)
 
@@ -127,14 +128,14 @@ class MetaFSCIL:
         self.init_classifier(self.task_sampler.n_base_task)
         self.task_sampler.new_sequence()
         self.model.train()
-        with tqdm(range(self.n_sessions), unit='batch') as tepoch:
+        with tqdm(range(self.n_sessions), unit='session') as tepoch:
             tepoch.set_description(f'Epoch {epoch}')
             for session in tepoch:
                 self.task_sampler.new_session()
                 if session > 0:
                     self.backup_classifier()
                     self.model.classifier = nn.Linear(
-                        self.model.classifier.in_features, self.task_sampler.n_way).to(
+                        self.model.classifier.in_features, self.task_sampler.n_way, bias=False).to(
                         self.device)
                 self.fast_model = copy.deepcopy(self.model)
                 self.warm_up(
@@ -157,15 +158,15 @@ class MetaFSCIL:
         self.writer.add_scalar('Meta/train_accuracy', total_acc / self.n_sessions, epoch)
 
     def meta_update(self, params):
+        # enable_grad(self.model)
         disable_grad(self.model, ['classifier'])
-        optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr)
         data, target = self.task_sampler.sample_query()
         data, target = data.to(self.device), target.to(self.device)
         output = self.model(data, params)
         loss = self.loss(output, target)
-        optimizer.zero_grad()
+        self.optimizer.zero_grad()
         loss.backward()
-        optimizer.step()
+        self.optimizer.step()
 
         return loss.item(), compute_accuracy(output, target)
 
@@ -184,7 +185,7 @@ class MetaFSCIL:
                 if session > 0:
                     self.backup_classifier()
                     self.model.classifier = nn.Linear(
-                        self.model.classifier.in_features, self.task_sampler.n_way).to(
+                        self.model.classifier.in_features, self.task_sampler.n_way, bias=False).to(
                         self.device)
                 self.fast_model = copy.deepcopy(self.model)
                 self.warm_up(

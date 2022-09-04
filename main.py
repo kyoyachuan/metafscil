@@ -57,7 +57,7 @@ def metatrain(args):
     trainer = MetaFSCIL(model, sampler, args)
     trainer.train(args.meta_epoch)
 
-    torch.save(model.state_dict(), f'models/{args.model}/metatrain.pth')
+    torch.save(trainer.model.state_dict(), f'models/{args.model}/metatrain.pth')
 
 
 def evaluate(args):
