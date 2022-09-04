@@ -51,62 +51,166 @@ class SelfModulation(nn.Module):
         self.att_mode = att_mode
         self.feature_extractor = models.resnet18()
         self.modulation_1 = SelfAttention(64) if att_mode == 'sfm' else ChannelAttention(64)
-        self.modulation_2 = SelfAttention(128) if att_mode == 'sfm' else ChannelAttention(128)
-        self.modulation_3 = SelfAttention(256) if att_mode == 'sfm' else ChannelAttention(256)
-        self.modulation_4 = ChannelAttention(512)
+        self.modulation_2 = SelfAttention(64) if att_mode == 'sfm' else ChannelAttention(64)
+        self.modulation_3 = SelfAttention(128) if att_mode == 'sfm' else ChannelAttention(128)
+        self.modulation_4 = SelfAttention(256) if att_mode == 'sfm' else ChannelAttention(256)
         self.modulation_5 = ChannelAttention(512)
         self.classifier = nn.Linear(self.feature_extractor.fc.in_features, num_classes)
 
         del self.feature_extractor.fc
 
-    def forward(self, x):
+    def forward(self, x, feat_params=None):
+        if feat_params is None:
+            feat_params = list(self.feature_extractor.parameters())
+
+        fe = self.feature_extractor
+
         # pre layer
-        x = self.feature_extractor.conv1(x)
-        x = self.feature_extractor.bn1(x)
-        x = self.feature_extractor.relu(x)
+        x = fe.conv1._conv_forward(x, feat_params[0], None)
+        x = F.batch_norm(x, fe.bn1.running_mean, fe.bn1.running_var,
+                         feat_params[1], feat_params[2], fe.bn1.training or not fe.bn1.track_running_stats)
+        x = fe.relu(x)
         x = self.modulation_1(x)
 
         # layer 1
-        x = self.feature_extractor.maxpool(x)
-        x = self.feature_extractor.layer1(x)
+        x = fe.maxpool(x)
+        x_skip_0_1 = x
+        x = fe.layer1[0].conv1._conv_forward(x, feat_params[3], None)
+        x = F.batch_norm(
+            x, fe.layer1[0].bn1.running_mean, fe.layer1[0].bn1.running_var, feat_params[4],
+            feat_params[5],
+            fe.layer1[0].bn1.training or not fe.layer1[0].bn1.track_running_stats)
+        x = fe.layer1[0].relu(x)
+        x = fe.layer1[0].conv2._conv_forward(x, feat_params[6], None)
+        x = F.batch_norm(
+            x, fe.layer1[0].bn2.running_mean, fe.layer1[0].bn2.running_var, feat_params[7],
+            feat_params[8],
+            fe.layer1[0].bn2.training or not fe.layer1[0].bn2.track_running_stats)
+        x = x + x_skip_0_1
+
+        x_skip_0_2 = x
+        x = fe.layer1[1].conv1._conv_forward(x, feat_params[9], None)
+        x = F.batch_norm(
+            x, fe.layer1[1].bn1.running_mean, fe.layer1[1].bn1.running_var, feat_params[10],
+            feat_params[11],
+            fe.layer1[1].bn1.training or not fe.layer1[1].bn1.track_running_stats)
+        x = fe.layer1[1].relu(x)
+        x = fe.layer1[1].conv2._conv_forward(x, feat_params[12], None)
+        x = F.batch_norm(
+            x, fe.layer1[1].bn2.running_mean, fe.layer1[1].bn2.running_var, feat_params[13],
+            feat_params[14],
+            fe.layer1[1].bn2.training or not fe.layer1[1].bn2.track_running_stats)
+        x = x + x_skip_0_2
+        x = self.modulation_2(x)
 
         # layer 2
-        x_skip_1 = x
-        x = self.feature_extractor.layer2[0].conv1(x)
-        x = self.feature_extractor.layer2[0].bn1(x)
-        x = self.feature_extractor.layer2[0].relu(x)
-        x = self.modulation_2(x)
-        x = self.feature_extractor.layer2[0].conv2(x)
-        x = self.feature_extractor.layer2[0].bn2(x)
-        x_skip_1 = self.feature_extractor.layer2[0].downsample(x_skip_1)
-        x = x + x_skip_1
-        x = self.feature_extractor.layer2[1](x)
+        x_skip_1_1 = x
+        x = fe.layer2[0].conv1._conv_forward(x, feat_params[15], None)
+        x = F.batch_norm(
+            x, fe.layer2[0].bn1.running_mean, fe.layer2[0].bn1.running_var, feat_params[16],
+            feat_params[17],
+            fe.layer2[0].bn1.training or not fe.layer2[0].bn1.track_running_stats)
+        x = fe.layer2[0].relu(x)
+        x = fe.layer2[0].conv2._conv_forward(x, feat_params[18], None)
+        x = F.batch_norm(
+            x, fe.layer2[0].bn2.running_mean, fe.layer2[0].bn2.running_var, feat_params[19],
+            feat_params[20],
+            fe.layer2[0].bn2.training or not fe.layer2[0].bn2.track_running_stats)
+        x_skip_1_1 = fe.layer2[0].downsample[0]._conv_forward(x_skip_1_1, feat_params[21], None)
+        x_skip_1_1 = F.batch_norm(
+            x_skip_1_1, fe.layer2[0].downsample[1].running_mean, fe.layer2[0].downsample[1].running_var,
+            feat_params[22],
+            feat_params[23],
+            fe.layer2[0].downsample[1].training or not fe.layer2[0].downsample[1].track_running_stats)
+        x = x + x_skip_1_1
+
+        x_skip_1_2 = x
+        x = fe.layer2[1].conv1._conv_forward(x, feat_params[24], None)
+        x = F.batch_norm(
+            x, fe.layer2[1].bn1.running_mean, fe.layer2[1].bn1.running_var, feat_params[25],
+            feat_params[26],
+            fe.layer2[1].bn1.training or not fe.layer2[1].bn1.track_running_stats)
+        x = fe.layer2[1].relu(x)
+        x = fe.layer2[1].conv2._conv_forward(x, feat_params[27], None)
+        x = F.batch_norm(
+            x, fe.layer2[1].bn2.running_mean, fe.layer2[1].bn2.running_var, feat_params[28],
+            feat_params[29],
+            fe.layer2[1].bn2.training or not fe.layer2[1].bn2.track_running_stats)
+        x = x + x_skip_1_2
+        x = self.modulation_3(x)
 
         # layer 3
-        x_skip_2 = x
-        x = self.feature_extractor.layer3[0].conv1(x)
-        x = self.feature_extractor.layer3[0].bn1(x)
-        x = self.feature_extractor.layer3[0].relu(x)
-        x = self.modulation_3(x)
-        x = self.feature_extractor.layer3[0].conv2(x)
-        x = self.feature_extractor.layer3[0].bn2(x)
-        x_skip_2 = self.feature_extractor.layer3[0].downsample(x_skip_2)
-        x = x + x_skip_2
-        x = self.feature_extractor.layer3[1](x)
+        x_skip_2_1 = x
+        x = fe.layer3[0].conv1._conv_forward(x, feat_params[30], None)
+        x = F.batch_norm(
+            x, fe.layer3[0].bn1.running_mean, fe.layer3[0].bn1.running_var, feat_params[31],
+            feat_params[32],
+            fe.layer3[0].bn1.training or not fe.layer3[0].bn1.track_running_stats)
+        x = fe.layer3[0].relu(x)
+        x = fe.layer3[0].conv2._conv_forward(x, feat_params[33], None)
+        x = F.batch_norm(
+            x, fe.layer3[0].bn2.running_mean, fe.layer3[0].bn2.running_var, feat_params[34],
+            feat_params[35],
+            fe.layer3[0].bn2.training or not fe.layer3[0].bn2.track_running_stats)
+        x_skip_2_1 = fe.layer3[0].downsample[0]._conv_forward(x_skip_2_1, feat_params[36], None)
+        x_skip_2_1 = F.batch_norm(
+            x_skip_2_1, fe.layer3[0].downsample[1].running_mean, fe.layer3[0].downsample[1].running_var,
+            feat_params[37],
+            feat_params[38],
+            fe.layer3[0].downsample[1].training or not fe.layer3[0].downsample[1].track_running_stats)
+        x = x + x_skip_2_1
+
+        x_skip_2_2 = x
+        x = fe.layer3[1].conv1._conv_forward(x, feat_params[39], None)
+        x = F.batch_norm(
+            x, fe.layer3[1].bn1.running_mean, fe.layer3[1].bn1.running_var, feat_params[40],
+            feat_params[41],
+            fe.layer3[1].bn1.training or not fe.layer3[1].bn1.track_running_stats)
+        x = fe.layer3[1].relu(x)
+        x = fe.layer3[1].conv2._conv_forward(x, feat_params[42], None)
+        x = F.batch_norm(
+            x, fe.layer3[1].bn2.running_mean, fe.layer3[1].bn2.running_var, feat_params[43],
+            feat_params[44],
+            fe.layer3[1].bn2.training or not fe.layer3[1].bn2.track_running_stats)
+        x = x + x_skip_2_2
+        x = self.modulation_4(x)
 
         # layer 4
-        x_skip_3 = x
-        x = self.feature_extractor.layer4[0].conv1(x)
-        x = self.feature_extractor.layer4[0].bn1(x)
-        x = self.feature_extractor.layer4[0].relu(x)
-        x = self.modulation_4(x)
-        x = self.feature_extractor.layer4[0].conv2(x)
-        x = self.feature_extractor.layer4[0].bn2(x)
-        x_skip_3 = self.feature_extractor.layer4[0].downsample(x_skip_3)
-        x = x + x_skip_3
+        x_skip_3_1 = x
+        x = fe.layer4[0].conv1._conv_forward(x, feat_params[45], None)
+        x = F.batch_norm(
+            x, fe.layer4[0].bn1.running_mean, fe.layer4[0].bn1.running_var, feat_params[46],
+            feat_params[47],
+            fe.layer4[0].bn1.training or not fe.layer4[0].bn1.track_running_stats)
+        x = fe.layer4[0].relu(x)
+        x = fe.layer4[0].conv2._conv_forward(x, feat_params[48], None)
+        x = F.batch_norm(
+            x, fe.layer4[0].bn2.running_mean, fe.layer4[0].bn2.running_var, feat_params[49],
+            feat_params[50],
+            fe.layer4[0].bn2.training or not fe.layer4[0].bn2.track_running_stats)
+        x_skip_3_1 = fe.layer4[0].downsample[0]._conv_forward(x_skip_3_1, feat_params[51], None)
+        x_skip_3_1 = F.batch_norm(
+            x_skip_3_1, fe.layer4[0].downsample[1].running_mean, fe.layer4[0].downsample[1].running_var,
+            feat_params[52],
+            feat_params[53],
+            fe.layer4[0].downsample[1].training or not fe.layer4[0].downsample[1].track_running_stats)
+        x = x + x_skip_3_1
 
-        x = self.feature_extractor.layer4[1](x)
+        x_skip_3_2 = x
+        x = fe.layer4[1].conv1._conv_forward(x, feat_params[54], None)
+        x = F.batch_norm(
+            x, fe.layer4[1].bn1.running_mean, fe.layer4[1].bn1.running_var, feat_params[55],
+            feat_params[56],
+            fe.layer4[1].bn1.training or not fe.layer4[1].bn1.track_running_stats)
+        x = fe.layer4[1].relu(x)
+        x = fe.layer4[1].conv2._conv_forward(x, feat_params[57], None)
+        x = F.batch_norm(
+            x, fe.layer4[1].bn2.running_mean, fe.layer4[1].bn2.running_var, feat_params[58],
+            feat_params[59],
+            fe.layer4[1].bn2.training or not fe.layer4[1].bn2.track_running_stats)
+        x = x + x_skip_3_2
 
+        # output
         x = self.feature_extractor.avgpool(x)
         x = self.modulation_5(x)
 
@@ -160,12 +264,20 @@ class BGM(nn.Module):
         out = out * value
         return out
 
-    def forward(self, input):
+    def forward(self, input, feat_params=None):
+        if feat_params is None:
+            feat_params = list(self.feature_extractor.parameters())
+
+        fe = self.feature_extractor
+
         # pre layer
-        x = self.feature_extractor.conv1(input)
-        x = self.feature_extractor.bn1(x)
-        x = self.feature_extractor.relu(x)
-        ref_w_1 = self._translate_weight(self.feature_extractor.conv1.weight.data,
+        x = fe.conv1._conv_forward(input, feat_params[0], None)
+        x = F.batch_norm(
+            x, fe.bn1.running_mean, fe.bn1.running_var, feat_params[1],
+            feat_params[2],
+            fe.bn1.training or not fe.bn1.track_running_stats)
+        x = fe.relu(x)
+        ref_w_1 = self._translate_weight(feat_params[0].data,
                                          self.modulation.conv1.weight.data, self.modulation_fc_1)
         x_ref = self.modulation.conv1._conv_forward(input, ref_w_1, None)
         x_ref = self.modulation.bn1(x_ref)
@@ -173,105 +285,197 @@ class BGM(nn.Module):
         x = x * x_ref
 
         # layer 1
-        x = self.feature_extractor.maxpool(x)
-        x = self.feature_extractor.layer1(x)
         x_ref = self.modulation.maxpool(x_ref)
         x_ref = self.modulation.layer1(x_ref)
+        x = fe.maxpool(x)
+
+        x_skip_0_1 = x
+        x = fe.layer1[0].conv1._conv_forward(x, feat_params[3], None)
+        x = F.batch_norm(
+            x, fe.layer1[0].bn1.running_mean, fe.layer1[0].bn1.running_var, feat_params[4],
+            feat_params[5],
+            fe.layer1[0].bn1.training or not fe.layer1[0].bn1.track_running_stats)
+        x = fe.layer1[0].relu(x)
+        x = fe.layer1[0].conv2._conv_forward(x, feat_params[6], None)
+        x = F.batch_norm(
+            x, fe.layer1[0].bn2.running_mean, fe.layer1[0].bn2.running_var, feat_params[7],
+            feat_params[8],
+            fe.layer1[0].bn2.training or not fe.layer1[0].bn2.track_running_stats)
+        x = x + x_skip_0_1
+
+        x_skip_0_2 = x
+        x = fe.layer1[1].conv1._conv_forward(x, feat_params[9], None)
+        x = F.batch_norm(
+            x, fe.layer1[1].bn1.running_mean, fe.layer1[1].bn1.running_var, feat_params[10],
+            feat_params[11],
+            fe.layer1[1].bn1.training or not fe.layer1[1].bn1.track_running_stats)
+        x = fe.layer1[1].relu(x)
+        x = fe.layer1[1].conv2._conv_forward(x, feat_params[12], None)
+        x = F.batch_norm(
+            x, fe.layer1[1].bn2.running_mean, fe.layer1[1].bn2.running_var, feat_params[13],
+            feat_params[14],
+            fe.layer1[1].bn2.training or not fe.layer1[1].bn2.track_running_stats)
+        x = x + x_skip_0_2
 
         # layer 2
-        x_skip_1 = x
+        x_skip_1_1 = x
         x_skip_ref_1 = x_ref
-        x = self.feature_extractor.layer2[0].conv1(x)
-        x = self.feature_extractor.layer2[0].bn1(x)
-        x = self.feature_extractor.layer2[0].relu(x)
+        x = fe.layer2[0].conv1._conv_forward(x, feat_params[15], None)
+        x = F.batch_norm(
+            x, fe.layer2[0].bn1.running_mean, fe.layer2[0].bn1.running_var, feat_params[16],
+            feat_params[17],
+            fe.layer2[0].bn1.training or not fe.layer2[0].bn1.track_running_stats)
+        x = fe.layer2[0].relu(x)
         ref_w_2 = self._translate_weight(
-            self.feature_extractor.layer2[0].conv1.weight.data,
+            feat_params[15].data,
             self.modulation.layer2[0].conv1.weight.data,
             self.modulation_fc_2
         )
         x_ref = self.modulation.layer2[0].conv1._conv_forward(x_ref, ref_w_2, None)
         x_ref = self.modulation.layer2[0].bn1(x_ref)
-        x_ref = self.modulation.layer2[0].relu(x_ref)
         x_ref = torch.sigmoid(x_ref)
         x = x * x_ref
-        x = self.feature_extractor.layer2[0].conv2(x)
-        x = self.feature_extractor.layer2[0].bn2(x)
-        x_skip_1 = self.feature_extractor.layer2[0].downsample(x_skip_1)
-        x = x + x_skip_1
         x_ref = self.modulation.layer2[0].conv2(x_ref)
         x_ref = self.modulation.layer2[0].bn2(x_ref)
         x_skip_ref_1 = self.modulation.layer2[0].downsample(x_skip_ref_1)
         x_ref = x_ref + x_skip_ref_1
-        x = self.feature_extractor.layer2[1](x)
+        x = fe.layer2[0].conv2._conv_forward(x, feat_params[18], None)
+        x = F.batch_norm(
+            x, fe.layer2[0].bn2.running_mean, fe.layer2[0].bn2.running_var, feat_params[19],
+            feat_params[20],
+            fe.layer2[0].bn2.training or not fe.layer2[0].bn2.track_running_stats)
+        x_skip_1_1 = fe.layer2[0].downsample[0]._conv_forward(x_skip_1_1, feat_params[21], None)
+        x_skip_1_1 = F.batch_norm(
+            x_skip_1_1, fe.layer2[0].downsample[1].running_mean,
+            fe.layer2[0].downsample[1].running_var, feat_params[22], feat_params[23],
+            fe.layer2[0].downsample[1].training or not fe.layer2[0].downsample[1].track_running_stats)
+        x = x + x_skip_1_1
+
+        x_skip_2_1 = x
+        x = fe.layer2[1].conv1._conv_forward(x, feat_params[24], None)
+        x = F.batch_norm(
+            x, fe.layer2[1].bn1.running_mean, fe.layer2[1].bn1.running_var, feat_params[25],
+            feat_params[26],
+            fe.layer2[1].bn1.training or not fe.layer2[1].bn1.track_running_stats)
+        x = fe.layer2[1].relu(x)
+        x = fe.layer2[1].conv2._conv_forward(x, feat_params[27], None)
+        x = F.batch_norm(
+            x, fe.layer2[1].bn2.running_mean, fe.layer2[1].bn2.running_var, feat_params[28],
+            feat_params[29],
+            fe.layer2[1].bn2.training or not fe.layer2[1].bn2.track_running_stats)
+        x = x + x_skip_2_1
         x_ref = self.modulation.layer2[1](x_ref)
 
         # layer 3
-        x_skip_2 = x
+        x_skip_2_1 = x
         x_skip_ref_2 = x_ref
-        x = self.feature_extractor.layer3[0].conv1(x)
-        x = self.feature_extractor.layer3[0].bn1(x)
-        x = self.feature_extractor.layer3[0].relu(x)
+        x = fe.layer3[0].conv1._conv_forward(x, feat_params[30], None)
+        x = F.batch_norm(
+            x, fe.layer3[0].bn1.running_mean, fe.layer3[0].bn1.running_var, feat_params[31],
+            feat_params[32],
+            fe.layer3[0].bn1.training or not fe.layer3[0].bn1.track_running_stats)
+        x = fe.layer3[0].relu(x)
         ref_w_3 = self._translate_weight(
-            self.feature_extractor.layer3[0].conv1.weight.data,
+            feat_params[30].data,
             self.modulation.layer3[0].conv1.weight.data,
             self.modulation_fc_3
         )
         x_ref = self.modulation.layer3[0].conv1._conv_forward(x_ref, ref_w_3, None)
         x_ref = self.modulation.layer3[0].bn1(x_ref)
-        x_ref = self.modulation.layer3[0].relu(x_ref)
         x_ref = torch.sigmoid(x_ref)
         x = x * x_ref
-        x = self.feature_extractor.layer3[0].conv2(x)
-        x = self.feature_extractor.layer3[0].bn2(x)
-        x_skip_2 = self.feature_extractor.layer3[0].downsample(x_skip_2)
-        x = x + x_skip_2
         x_ref = self.modulation.layer3[0].conv2(x_ref)
         x_ref = self.modulation.layer3[0].bn2(x_ref)
         x_skip_ref_2 = self.modulation.layer3[0].downsample(x_skip_ref_2)
         x_ref = x_ref + x_skip_ref_2
-        x = self.feature_extractor.layer3[1](x)
+        x = fe.layer3[0].conv2._conv_forward(x, feat_params[33], None)
+        x = F.batch_norm(
+            x, fe.layer3[0].bn2.running_mean, fe.layer3[0].bn2.running_var, feat_params[34],
+            feat_params[35],
+            fe.layer3[0].bn2.training or not fe.layer3[0].bn2.track_running_stats)
+        x_skip_2_1 = fe.layer3[0].downsample[0]._conv_forward(x_skip_2_1, feat_params[36], None)
+        x_skip_2_1 = F.batch_norm(
+            x_skip_2_1, fe.layer3[0].downsample[1].running_mean,
+            fe.layer3[0].downsample[1].running_var, feat_params[37], feat_params[38],
+            fe.layer3[0].downsample[1].training or not fe.layer3[0].downsample[1].track_running_stats)
+        x = x + x_skip_2_1
+
+        x_skip_3_1 = x
+        x = fe.layer3[1].conv1._conv_forward(x, feat_params[39], None)
+        x = F.batch_norm(
+            x, fe.layer3[1].bn1.running_mean, fe.layer3[1].bn1.running_var, feat_params[40],
+            feat_params[41],
+            fe.layer3[1].bn1.training or not fe.layer3[1].bn1.track_running_stats)
+        x = fe.layer3[1].relu(x)
+        x = fe.layer3[1].conv2._conv_forward(x, feat_params[42], None)
+        x = F.batch_norm(
+            x, fe.layer3[1].bn2.running_mean, fe.layer3[1].bn2.running_var, feat_params[43],
+            feat_params[44],
+            fe.layer3[1].bn2.training or not fe.layer3[1].bn2.track_running_stats)
+        x = x + x_skip_3_1
         x_ref = self.modulation.layer3[1](x_ref)
 
         # layer 4
-        x_skip_3 = x
+        x_skip_3_1 = x
         x_skip_ref_3 = x_ref
-        x = self.feature_extractor.layer4[0].conv1(x)
-        x = self.feature_extractor.layer4[0].bn1(x)
-        x = self.feature_extractor.layer4[0].relu(x)
+        x = fe.layer4[0].conv1._conv_forward(x, feat_params[45], None)
+        x = F.batch_norm(
+            x, fe.layer4[0].bn1.running_mean, fe.layer4[0].bn1.running_var, feat_params[46],
+            feat_params[47],
+            fe.layer4[0].bn1.training or not fe.layer4[0].bn1.track_running_stats)
+        x = fe.layer4[0].relu(x)
         ref_w_4 = self._translate_weight(
-            self.feature_extractor.layer4[0].conv1.weight.data,
+            feat_params[45].data,
             self.modulation.layer4[0].conv1.weight.data,
             self.modulation_fc_4
         )
         x_ref = self.modulation.layer4[0].conv1._conv_forward(x_ref, ref_w_4, None)
         x_ref = self.modulation.layer4[0].bn1(x_ref)
-        x_ref = self.modulation.layer4[0].relu(x_ref)
         x_ref = torch.sigmoid(x_ref)
         x = x * x_ref
-        x = self.feature_extractor.layer4[0].conv2(x)
-        x = self.feature_extractor.layer4[0].bn2(x)
-        x_skip_3 = self.feature_extractor.layer4[0].downsample(x_skip_3)
-        x = x + x_skip_3
         x_ref = self.modulation.layer4[0].conv2(x_ref)
         x_ref = self.modulation.layer4[0].bn2(x_ref)
         x_skip_ref_3 = self.modulation.layer4[0].downsample(x_skip_ref_3)
         x_ref = x_ref + x_skip_ref_3
-        x = self.feature_extractor.layer4[1](x)
-        x_ref = self.modulation.layer4[1](x_ref)
+        x = fe.layer4[0].conv2._conv_forward(x, feat_params[48], None)
+        x = F.batch_norm(
+            x, fe.layer4[0].bn2.running_mean, fe.layer4[0].bn2.running_var, feat_params[49],
+            feat_params[50],
+            fe.layer4[0].bn2.training or not fe.layer4[0].bn2.track_running_stats)
+        x_skip_3_1 = fe.layer4[0].downsample[0]._conv_forward(x_skip_3_1, feat_params[51], None)
+        x_skip_3_1 = F.batch_norm(
+            x_skip_3_1, fe.layer4[0].downsample[1].running_mean,
+            fe.layer4[0].downsample[1].running_var, feat_params[52], feat_params[53],
+            fe.layer4[0].downsample[1].training or not fe.layer4[0].downsample[1].track_running_stats)
+        x = x + x_skip_3_1
 
-        x = self.feature_extractor.layer4[1](x)
+        x_skip_4_1 = x
+        x = fe.layer4[1].conv1._conv_forward(x, feat_params[54], None)
+        x = F.batch_norm(
+            x, fe.layer4[1].bn1.running_mean, fe.layer4[1].bn1.running_var, feat_params[55],
+            feat_params[56],
+            fe.layer4[1].bn1.training or not fe.layer4[1].bn1.track_running_stats)
+        x = fe.layer4[1].relu(x)
+        x = fe.layer4[1].conv2._conv_forward(x, feat_params[57], None)
+        x = F.batch_norm(
+            x, fe.layer4[1].bn2.running_mean, fe.layer4[1].bn2.running_var, feat_params[58],
+            feat_params[59],
+            fe.layer4[1].bn2.training or not fe.layer4[1].bn2.track_running_stats)
+        x = x + x_skip_4_1
         x_skip_ref_4 = x_ref
-        x_ref = self.modulation.layer4[1].conv1(x_ref)
-        x_ref = self.modulation.layer4[1].bn1(x_ref)
-        x_ref = self.modulation.layer4[1].relu(x_ref)
         ref_w_5 = self._translate_weight(
-            self.feature_extractor.layer4[1].conv2.weight.data,
+            feat_params[54].data,
             self.modulation.layer4[1].conv2.weight.data,
             self.modulation_fc_5
         )
-        x_ref = self.modulation.layer4[1].conv2._conv_forward(x_ref, ref_w_5, None)
+        x_ref = self.modulation.layer4[1].conv1._conv_forward(x_ref, ref_w_5, None)
+        x_ref = self.modulation.layer4[1].bn1(x_ref)
+        x_ref = self.modulation.layer4[1].relu(x_ref)
+        x_ref = self.modulation.layer4[1].conv2(x_ref)
         x_ref = self.modulation.layer4[1].bn2(x_ref)
         x_ref = x_ref + x_skip_ref_4
+
+        # output
         x = self.feature_extractor.avgpool(x)
         x_ref = self.modulation.avgpool(x_ref)
         x = x * torch.sigmoid(x_ref)

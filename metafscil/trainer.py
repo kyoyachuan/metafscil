@@ -5,7 +5,7 @@ from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from .utils import disable_grad, compute_accuracy
+from .utils import enable_grad, disable_grad, compute_accuracy
 
 
 class Pretrain:
@@ -78,7 +78,6 @@ class MetaFSCIL:
         self.device = args.device
 
         self.loss = nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
 
         self.writer = SummaryWriter(f"{args.log_dir}/{args.model}")
 
@@ -146,7 +145,9 @@ class MetaFSCIL:
 
                 self.fast_adapt()
                 self.model.classifier = copy.deepcopy(self.fast_model.classifier)
-                loss, acc = self.meta_update()
+                fast_params = list(self.fast_model.feature_extractor.parameters())
+                del self.fast_model
+                loss, acc = self.meta_update(fast_params)
                 total_loss += loss
                 total_acc += acc
 
@@ -155,20 +156,16 @@ class MetaFSCIL:
         self.writer.add_scalar('Meta/train_loss', total_loss / self.n_sessions, epoch)
         self.writer.add_scalar('Meta/train_accuracy', total_acc / self.n_sessions, epoch)
 
-    def meta_update(self):
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        optimizer.load_state_dict(self.optimizer.state_dict())
+    def meta_update(self, params):
+        disable_grad(self.model, ['classifier'])
+        optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr)
         data, target = self.task_sampler.sample_query()
         data, target = data.to(self.device), target.to(self.device)
-        output = self.fast_model(data)
+        output = self.model(data, params)
         loss = self.loss(output, target)
         optimizer.zero_grad()
-        grads = torch.autograd.grad(loss, self.model.parameters(), allow_unused=True)
-        for p, g in zip(self.model.named_parameters(), grads):
-            if 'classifier' not in p[0]:
-                p[1].grad = g
+        loss.backward()
         optimizer.step()
-        self.optimizer.load_state_dict(optimizer.state_dict())
 
         return loss.item(), compute_accuracy(output, target)
 

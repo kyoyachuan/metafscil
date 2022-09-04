@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.transforms.functional import resize
 from torchvision.io import read_image, ImageReadMode
+from sklearn.utils import shuffle
 
 
 def get_metadata(path: str):
@@ -68,7 +69,7 @@ def get_pretrain_dataloader(
             imgs.append(img)
             labels.append(i)
     dataset = MiniImagenetDataset(imgs, labels, transform)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=6, drop_last=True)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=12, pin_memory=True)
     return dataloader
 
 
@@ -137,14 +138,19 @@ class SequentialTaskSampler:
             self.query_labels += [self.shuffle_classes.index(cls)] * len(self.query_pools[cls])
 
         self.support_loader = self._get_loader(self.support_imgs, self.support_labels, min(len(self.support_imgs), 128))
-        self.query_loader = self._get_loader(self.query_imgs, self.query_labels, self.n_sample_query)
+        self.query_loader = self._get_loader(self.query_imgs, self.query_labels,
+                                             self.n_sample_query, max_samples=self.n_query)
 
         self.support_iter = iter(self.support_loader)
         self.query_iter = iter(self.query_loader)
 
-    def _get_loader(self, imgs, labels, batch_size):
+    def _get_loader(self, imgs, labels, batch_size, max_samples=None):
+        imgs, labels = shuffle(imgs, labels)
+        if max_samples is not None:
+            imgs = imgs[:max_samples]
+            labels = labels[:max_samples]
         dataset = MiniImagenetDataset(imgs, labels)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=2)
         return dataloader
 
     def sample_query(self):
@@ -186,15 +192,15 @@ class EpisodeSampler:
         # training set
         self.support_imgs = []
         self.support_labels = []
-        imgs, cls = get_metadata(f"metadata/miniimagenet/session_{self.session + 1}.txt")
-        self.classes += cls
-        for cls in self.classes:
+        imgs, clss = get_metadata(f"metadata/mini_imagenet/session_{self.session + 1}.txt")
+        self.classes += clss
+        for cls in clss:
             self.support_imgs += imgs[cls][:]
             self.support_labels += [self.classes.index(cls)] * len(imgs[cls])
 
         # testing set
-        imgs, _ = get_metadata(f"metadata/miniimagenet/test_{self.session + 1}.txt")
-        for cls in self.classes:
+        imgs, _ = get_metadata(f"metadata/mini_imagenet/test_{self.session + 1}.txt")
+        for cls in clss:
             self.query_imgs += imgs[cls][:]
             self.query_labels += [self.classes.index(cls)] * len(imgs[cls])
 
@@ -205,7 +211,7 @@ class EpisodeSampler:
 
     def _get_loader(self, imgs, labels, batch_size):
         dataset = MiniImagenetDataset(imgs, labels)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=2)
         return dataloader
 
     def sample_support(self):

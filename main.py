@@ -5,7 +5,7 @@ import argparse
 import torch
 
 from metafscil.models import get_model
-from metafscil.dataset import get_pretrain_dataloader, SequentialTaskSampler
+from metafscil.dataset import get_pretrain_dataloader, SequentialTaskSampler, EpisodeSampler
 from metafscil.trainer import Pretrain, MetaFSCIL
 
 
@@ -61,7 +61,15 @@ def metatrain(args):
 
 
 def evaluate(args):
-    pass
+    print('Evaluate...')
+
+    sampler = EpisodeSampler()
+
+    model = get_model(args.model, 60).to(args.device)
+    model.load_state_dict(torch.load(f'models/{args.model}/metatrain.pth'))
+
+    trainer = MetaFSCIL(model, sampler, args)
+    trainer.meta_test()
 
 
 if __name__ == '__main__':
@@ -74,4 +82,4 @@ if __name__ == '__main__':
         if args.pretrain:
             pretrain(args)
         metatrain(args)
-    # evaluate(args)
+    evaluate(args)
