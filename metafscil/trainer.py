@@ -1,3 +1,5 @@
+import copy
+
 import torch
 from torch import nn
 from torch.utils.tensorboard import SummaryWriter
@@ -68,23 +70,147 @@ class Pretrain:
 
 
 class MetaFSCIL:
-    def __init__():
-        pass
+    def __init__(self, model, task_sampler, args):
+        self.model = model.to(args.device)
+        self.task_sampler = task_sampler
+        self.n_sessions = 9
+        self.lr = args.meta_lr
+        self.device = args.device
 
-    def init_classifier():
-        pass
+        self.loss = nn.CrossEntropyLoss()
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
 
-    def accumulate_classifier():
-        pass
+        self.writer = SummaryWriter(f"{args.log_dir}/{args.model}")
 
-    def warm_up():
-        pass
+    def init_classifier(self, base_classes: int = 20):
+        self.previous_classifier = None
+        self.model.classifier = nn.Linear(self.model.classifier.in_features, base_classes).to(self.device)
 
-    def fast_adapt():
-        pass
+    def backup_classifier(self):
+        self.previous_classifier = copy.deepcopy(self.model.classifier)
 
-    def meta_train():
-        pass
+    def accumulate_classifier(self):
+        current_classifier = copy.deepcopy(self.fast_model.classifier)
+        out_features = self.previous_classifier.out_features + current_classifier.out_features
+        self.fast_model.classifier = nn.Linear(current_classifier.in_features, out_features).to(self.device)
+        self.fast_model.classifier.weight.data = torch.concat(
+            (self.previous_classifier.weight.data, current_classifier.weight.data), dim=0)
 
-    def meta_test():
-        pass
+    def warm_up(self, n_steps=20, scale=None):
+        disable_grad(self.fast_model, ['feature_extractor', 'modulation'])
+        optimizer = torch.optim.SGD(self.fast_model.parameters(), lr=0.1)
+        for _ in range(n_steps):
+            data, target = self.task_sampler.sample_support()
+            if scale:
+                target = target % scale
+            data, target = data.to(self.device), target.to(self.device)
+            output = self.fast_model(data)
+            loss = self.loss(output, target)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+    def fast_adapt(self, n_steps=5):
+        disable_grad(self.fast_model, ['modulation'])
+        optimizer = torch.optim.SGD(self.fast_model.parameters(), lr=self.lr)
+        for _ in range(n_steps):
+            data, target = self.task_sampler.sample_support()
+            data, target = data.to(self.device), target.to(self.device)
+            output = self.fast_model(data)
+            loss = self.loss(output, target)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+    def meta_train(self, epoch):
+        total_loss = 0
+        total_acc = 0
+        self.init_classifier(self.task_sampler.n_base_task)
+        self.task_sampler.new_sequence()
+        self.model.train()
+        with tqdm(range(self.n_sessions), unit='batch') as tepoch:
+            tepoch.set_description(f'Epoch {epoch}')
+            for session in tepoch:
+                self.task_sampler.new_session()
+                if session > 0:
+                    self.backup_classifier()
+                    self.model.classifier = nn.Linear(
+                        self.model.classifier.in_features, self.task_sampler.n_way).to(
+                        self.device)
+                self.fast_model = copy.deepcopy(self.model)
+                self.warm_up(
+                    scale=None if session == 0 else self.task_sampler.n_way
+                )
+                if session > 0:
+                    self.accumulate_classifier()
+
+                self.fast_adapt()
+                self.model.classifier = copy.deepcopy(self.fast_model.classifier)
+                loss, acc = self.meta_update()
+                total_loss += loss
+                total_acc += acc
+
+                tepoch.set_postfix(loss=loss, accuracy=acc)
+
+        self.writer.add_scalar('Meta/train_loss', total_loss / self.n_sessions, epoch)
+        self.writer.add_scalar('Meta/train_accuracy', total_acc / self.n_sessions, epoch)
+
+    def meta_update(self):
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
+        optimizer.load_state_dict(self.optimizer.state_dict())
+        data, target = self.task_sampler.sample_query()
+        data, target = data.to(self.device), target.to(self.device)
+        output = self.fast_model(data)
+        loss = self.loss(output, target)
+        optimizer.zero_grad()
+        grads = torch.autograd.grad(loss, self.model.parameters(), allow_unused=True)
+        for p, g in zip(self.model.named_parameters(), grads):
+            if 'classifier' not in p[0]:
+                p[1].grad = g
+        optimizer.step()
+        self.optimizer.load_state_dict(optimizer.state_dict())
+
+        return loss.item(), compute_accuracy(output, target)
+
+    def train(self, epochs):
+        for epoch in range(epochs):
+            self.meta_train(epoch)
+
+    def meta_test(self, n_episodes=9):
+        acc_dict = dict()
+        self.init_classifier(self.task_sampler.n_base_task)
+        with tqdm(range(n_episodes), unit='session') as tepoch:
+            tepoch.set_description(f'Evaluation')
+            for session in tepoch:
+                self.model.train()
+                self.task_sampler.new_session()
+                if session > 0:
+                    self.backup_classifier()
+                    self.model.classifier = nn.Linear(
+                        self.model.classifier.in_features, self.task_sampler.n_way).to(
+                        self.device)
+                self.fast_model = copy.deepcopy(self.model)
+                self.warm_up(
+                    scale=None if session == 0 else self.task_sampler.n_way
+                )
+                if session > 0:
+                    self.accumulate_classifier()
+
+                self.fast_adapt()
+                self.model = copy.deepcopy(self.fast_model)
+
+                self.model.eval()
+                with torch.no_grad():
+                    acc = 0
+                    for img, target in self.task_sampler.query_loader:
+                        img, target = img.to(self.device), target.to(self.device)
+                        output = self.model(img)
+                        acc += compute_accuracy(output, target)
+                    acc /= len(self.task_sampler.query_loader)
+
+                tepoch.set_postfix(accuracy=acc)
+                acc_dict[session] = acc
+
+                self.writer.add_scalar('Meta/eval_accuracy', acc, session)
+
+        print(f"Average accuracy: {sum(acc_dict.values()) / len(acc_dict)}")
