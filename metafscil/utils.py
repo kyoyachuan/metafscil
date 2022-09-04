@@ -2,11 +2,6 @@ import torch
 from torch import nn
 
 
-def enable_grad(model: nn.Module):
-    for p in model.parameters():
-        p.requires_grad = True
-
-
 def disable_grad(model: nn.Module, patterns: list):
     for p in model.named_parameters():
         if any([pat in p[0] for pat in patterns]):

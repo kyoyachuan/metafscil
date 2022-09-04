@@ -51,9 +51,9 @@ class SelfModulation(nn.Module):
         self.att_mode = att_mode
         self.feature_extractor = models.resnet18()
         self.modulation_1 = SelfAttention(64) if att_mode == 'sfm' else ChannelAttention(64)
-        self.modulation_2 = SelfAttention(64) if att_mode == 'sfm' else ChannelAttention(64)
-        self.modulation_3 = SelfAttention(128) if att_mode == 'sfm' else ChannelAttention(128)
-        self.modulation_4 = SelfAttention(256) if att_mode == 'sfm' else ChannelAttention(256)
+        self.modulation_2 = SelfAttention(128) if att_mode == 'sfm' else ChannelAttention(128)
+        self.modulation_3 = SelfAttention(256) if att_mode == 'sfm' else ChannelAttention(256)
+        self.modulation_4 = SelfAttention(512) if att_mode == 'sfm' else ChannelAttention(512)
         self.modulation_5 = ChannelAttention(512)
         self.classifier = nn.Linear(self.feature_extractor.fc.in_features, num_classes)
 
@@ -101,7 +101,6 @@ class SelfModulation(nn.Module):
             feat_params[14],
             fe.layer1[1].bn2.training or not fe.layer1[1].bn2.track_running_stats)
         x = x + x_skip_0_2
-        x = self.modulation_2(x)
 
         # layer 2
         x_skip_1_1 = x
@@ -111,6 +110,7 @@ class SelfModulation(nn.Module):
             feat_params[17],
             fe.layer2[0].bn1.training or not fe.layer2[0].bn1.track_running_stats)
         x = fe.layer2[0].relu(x)
+        x = self.modulation_2(x)
         x = fe.layer2[0].conv2._conv_forward(x, feat_params[18], None)
         x = F.batch_norm(
             x, fe.layer2[0].bn2.running_mean, fe.layer2[0].bn2.running_var, feat_params[19],
@@ -137,7 +137,6 @@ class SelfModulation(nn.Module):
             feat_params[29],
             fe.layer2[1].bn2.training or not fe.layer2[1].bn2.track_running_stats)
         x = x + x_skip_1_2
-        x = self.modulation_3(x)
 
         # layer 3
         x_skip_2_1 = x
@@ -147,6 +146,7 @@ class SelfModulation(nn.Module):
             feat_params[32],
             fe.layer3[0].bn1.training or not fe.layer3[0].bn1.track_running_stats)
         x = fe.layer3[0].relu(x)
+        x = self.modulation_3(x)
         x = fe.layer3[0].conv2._conv_forward(x, feat_params[33], None)
         x = F.batch_norm(
             x, fe.layer3[0].bn2.running_mean, fe.layer3[0].bn2.running_var, feat_params[34],
@@ -173,7 +173,6 @@ class SelfModulation(nn.Module):
             feat_params[44],
             fe.layer3[1].bn2.training or not fe.layer3[1].bn2.track_running_stats)
         x = x + x_skip_2_2
-        x = self.modulation_4(x)
 
         # layer 4
         x_skip_3_1 = x
@@ -183,6 +182,7 @@ class SelfModulation(nn.Module):
             feat_params[47],
             fe.layer4[0].bn1.training or not fe.layer4[0].bn1.track_running_stats)
         x = fe.layer4[0].relu(x)
+        x = self.modulation_4(x)
         x = fe.layer4[0].conv2._conv_forward(x, feat_params[48], None)
         x = F.batch_norm(
             x, fe.layer4[0].bn2.running_mean, fe.layer4[0].bn2.running_var, feat_params[49],

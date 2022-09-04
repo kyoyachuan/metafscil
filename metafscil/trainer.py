@@ -5,7 +5,7 @@ from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from .utils import enable_grad, disable_grad, compute_accuracy
+from .utils import disable_grad, compute_accuracy
 
 
 class Pretrain:
