@@ -6,7 +6,6 @@ import torch
 from torch import tensor
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
-from torchvision.transforms.functional import resize
 from torchvision.io import read_image, ImageReadMode
 
 
@@ -32,12 +31,13 @@ class MiniImagenetDataset(Dataset):
         if transform:
             self.transform = transforms.Compose([
                 transforms.RandomResizedCrop(84),
-                transforms.RandomCrop(84, padding=8),
                 transforms.RandomHorizontalFlip(),
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ])
         else:
             self.transform = transforms.Compose([
+                transforms.Resize([92, 92]),
+                transforms.CenterCrop(84),
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ])
 
@@ -54,7 +54,6 @@ class MiniImagenetDataset(Dataset):
 
     def _load_and_preprocess_image(self, img_path) -> tensor:
         img = read_image(img_path, mode=ImageReadMode.RGB)
-        img = resize(img, (84, 84))
         return img.float().div(255)
 
 
@@ -82,7 +81,7 @@ class SequentialTaskSampler:
         n_support: int = 250,
         n_base_task: int = 20,
         n_sample_base_per_class: int = 50,
-        n_sample_query: int = 100
+        n_sample_query: int = 50
     ):
         self.n_way = n_way
         self.n_shot = n_shot
