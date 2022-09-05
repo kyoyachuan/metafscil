@@ -82,7 +82,7 @@ class SequentialTaskSampler:
         n_support: int = 250,
         n_base_task: int = 20,
         n_sample_base_per_class: int = 50,
-        n_sample_query: int = 50
+        n_sample_query: int = 100
     ):
         self.n_way = n_way
         self.n_shot = n_shot
@@ -133,18 +133,19 @@ class SequentialTaskSampler:
         for cls in classes:
             self.support_imgs += self.support_pools[cls][:n_support_imgs]
             self.support_labels += [self.shuffle_classes.index(cls)] * n_support_imgs
-            self.query_imgs += self.query_pools[cls]
-            self.query_labels += [self.shuffle_classes.index(cls)] * len(self.query_pools[cls])
+            self.query_imgs += self.query_pools[cls][:self.n_sample_query]
+            self.query_labels += [self.shuffle_classes.index(cls)] * self.n_sample_query
 
-        self.support_loader = self._get_loader(self.support_imgs, self.support_labels, min(len(self.support_imgs), 128))
-        self.query_loader = self._get_loader(self.query_imgs, self.query_labels, self.n_sample_query)
+        self.support_loader = self._get_loader(self.support_imgs, self.support_labels,
+                                               min(len(self.support_imgs), 128), shuffle=True)
+        self.query_loader = self._get_loader(self.query_imgs, self.query_labels, self.n_sample_query, shuffle=True)
 
         self.support_iter = iter(self.support_loader)
         self.query_iter = iter(self.query_loader)
 
-    def _get_loader(self, imgs, labels, batch_size):
+    def _get_loader(self, imgs, labels, batch_size, shuffle=True):
         dataset = MiniImagenetDataset(imgs, labels)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=2)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, drop_last=True, num_workers=2)
         return dataloader
 
     def sample_query(self):

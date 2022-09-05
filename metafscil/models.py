@@ -4,6 +4,36 @@ from torchvision import models
 import torch.nn.functional as F
 
 
+class IncrementalLinear(nn.Module):
+    def __init__(self, in_dim, init_classes, device):
+        super().__init__()
+        self.in_dim = in_dim
+        self.init_classes = init_classes
+        self.device = device
+        self.fc0 = nn.Linear(in_dim, init_classes, bias=False).to(device)
+        self.num_layers = 1
+
+    def forward(self, x, layer=None):
+        if layer is not None:
+            return self.__getattr__(f'fc{layer}')(x)
+        else:
+            out = self.fc0(x)
+            for i in range(1, self.num_layers):
+                out_new = self.__getattr__(f'fc{i}')(x)
+                out = torch.cat((out, out_new), dim=1)
+            return out
+
+    def add_layer(self, num_classes, layer=None):
+        if layer is None:
+            layer = nn.Linear(self.in_dim, num_classes, bias=False)
+        self.__setattr__(f'fc{self.num_layers}', layer)
+        self.__getattr__(f'fc{self.num_layers}').to(self.device)
+        self.num_layers += 1
+
+    def get_last_layer(self):
+        return self.__getattr__(f'fc{self.num_layers - 1}')
+
+
 class ChannelAttention(nn.Module):
     def __init__(self, in_channel):
         super().__init__()
@@ -59,7 +89,7 @@ class SelfModulation(nn.Module):
 
         del self.feature_extractor.fc
 
-    def forward(self, x, feat_params=None):
+    def forward(self, x, feat_params=None, **kwargs):
         if feat_params is None:
             feat_params = list(self.feature_extractor.parameters())
 
@@ -215,7 +245,7 @@ class SelfModulation(nn.Module):
         x = self.modulation_5(x)
 
         x = torch.flatten(x, 1)
-        x = self.classifier(x)
+        x = self.classifier(x, **kwargs)
 
         return x
 
@@ -264,7 +294,7 @@ class BGM(nn.Module):
         out = out * value
         return out
 
-    def forward(self, input, feat_params=None):
+    def forward(self, input, feat_params=None, **kwargs):
         if feat_params is None:
             feat_params = list(self.feature_extractor.parameters())
 
@@ -481,7 +511,7 @@ class BGM(nn.Module):
         x = x * torch.sigmoid(x_ref)
 
         x = torch.flatten(x, 1)
-        x = self.classifier(x)
+        x = self.classifier(x, **kwargs)
 
         return x
 

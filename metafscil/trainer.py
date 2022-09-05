@@ -5,7 +5,8 @@ from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from .utils import enable_grad, disable_grad, compute_accuracy
+from .models import IncrementalLinear
+from .utils import disable_grad, compute_accuracy
 
 
 class Pretrain:
@@ -76,43 +77,38 @@ class MetaFSCIL:
         self.n_sessions = 9
         self.lr = args.meta_lr
         self.device = args.device
+        self.in_features = model.classifier.in_features
 
         self.loss = nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
+        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr, momentum=0.9)
 
         self.writer = SummaryWriter(f"{args.log_dir}/{args.model}")
 
     def init_classifier(self, base_classes: int = 20):
-        self.previous_classifier = None
-        self.model.classifier = nn.Linear(self.model.classifier.in_features, base_classes, bias=False).to(self.device)
+        self.model.classifier = IncrementalLinear(self.in_features, base_classes, self.device)
 
-    def backup_classifier(self):
-        self.previous_classifier = copy.deepcopy(self.model.classifier)
+    def accumulate_classifier(self, num_classes):
+        self.fast_model.classifier.add_layer(num_classes)
 
-    def accumulate_classifier(self):
-        current_classifier = copy.deepcopy(self.fast_model.classifier)
-        out_features = self.previous_classifier.out_features + current_classifier.out_features
-        self.fast_model.classifier = nn.Linear(current_classifier.in_features, out_features, bias=False).to(self.device)
-        self.fast_model.classifier.weight.data = torch.concat(
-            (self.previous_classifier.weight.data, current_classifier.weight.data), dim=0)
-
-    def warm_up(self, n_steps=20, scale=None):
+    def warm_up(self, session, n_steps=20, scale=None):
         disable_grad(self.fast_model, ['feature_extractor', 'modulation'])
         optimizer = torch.optim.SGD(self.fast_model.parameters(), lr=0.1)
+        self.fast_model.train(False)
         for _ in range(n_steps):
             data, target = self.task_sampler.sample_support()
             if scale:
                 target = target % scale
             data, target = data.to(self.device), target.to(self.device)
-            output = self.fast_model(data)
+            output = self.fast_model(data, layer=session)
             loss = self.loss(output, target)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
     def fast_adapt(self, n_steps=5):
-        disable_grad(self.fast_model, ['modulation'])
+        disable_grad(self.fast_model, ['modulation', 'bn'])
         optimizer = torch.optim.SGD(self.fast_model.parameters(), lr=self.lr)
+        self.fast_model.train(False)
         for _ in range(n_steps):
             data, target = self.task_sampler.sample_support()
             data, target = data.to(self.device), target.to(self.device)
@@ -127,48 +123,56 @@ class MetaFSCIL:
         total_acc = 0
         self.init_classifier(self.task_sampler.n_base_task)
         self.task_sampler.new_sequence()
-        self.model.train()
+        self.model.train(False)
+        self.fast_model = copy.deepcopy(self.model)
         with tqdm(range(self.n_sessions), unit='session') as tepoch:
             tepoch.set_description(f'Epoch {epoch}')
             for session in tepoch:
                 self.task_sampler.new_session()
+                # self.fast_model = copy.deepcopy(self.model)
                 if session > 0:
-                    self.backup_classifier()
-                    self.model.classifier = nn.Linear(
-                        self.model.classifier.in_features, self.task_sampler.n_way, bias=False).to(
-                        self.device)
-                self.fast_model = copy.deepcopy(self.model)
+                    self.accumulate_classifier(self.task_sampler.n_way)
                 self.warm_up(
+                    session,
                     scale=None if session == 0 else self.task_sampler.n_way
                 )
-                if session > 0:
-                    self.accumulate_classifier()
 
                 self.fast_adapt()
-                self.model.classifier = copy.deepcopy(self.fast_model.classifier)
-                fast_params = list(self.fast_model.feature_extractor.parameters())
-                del self.fast_model
-                loss, acc = self.meta_update(fast_params)
-                total_loss += loss
-                total_acc += acc
+                # self.model.classifier = copy.deepcopy(self.fast_model.classifier)
+                # fast_params = list(self.fast_model.feature_extractor.parameters())
+                # loss, acc = self.meta_update(fast_params, session)
+                # total_loss += loss
+                # total_acc += acc
 
-                tepoch.set_postfix(loss=loss, accuracy=acc)
+                # tepoch.set_postfix(loss=loss, accuracy=acc)
 
-        self.writer.add_scalar('Meta/train_loss', total_loss / self.n_sessions, epoch)
-        self.writer.add_scalar('Meta/train_accuracy', total_acc / self.n_sessions, epoch)
+            self.model.classifier = copy.deepcopy(self.fast_model.classifier)
+            fast_params = list(self.fast_model.feature_extractor.parameters())
+            loss, acc = self.meta_update(fast_params, session)
 
-    def meta_update(self, params):
-        # enable_grad(self.model)
-        disable_grad(self.model, ['classifier'])
+            tepoch.set_postfix(loss=loss, accuracy=acc)
+
+        self.writer.add_scalar('Meta/train_loss', loss, epoch)
+        self.writer.add_scalar('Meta/train_accuracy', acc, epoch)
+
+        # self.writer.add_scalar('Meta/train_loss', total_loss / self.n_sessions, epoch)
+        # self.writer.add_scalar('Meta/train_accuracy', total_acc / self.n_sessions, epoch)
+
+    def meta_update(self, params, session):
+        disable_grad(self.model, ['classifier', 'bn'])
+        self.model.train(False)
         data, target = self.task_sampler.sample_query()
         data, target = data.to(self.device), target.to(self.device)
         output = self.model(data, params)
         loss = self.loss(output, target)
+        # loss = loss / self.task_sampler.session_n_class
+        with torch.no_grad():
+            accuracy = compute_accuracy(output, target)
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
-        return loss.item(), compute_accuracy(output, target)
+        return loss.item(), accuracy
 
     def train(self, epochs):
         for epoch in range(epochs):
@@ -177,22 +181,19 @@ class MetaFSCIL:
     def meta_test(self, n_episodes=9):
         acc_dict = dict()
         self.init_classifier(self.task_sampler.n_base_task)
+        self.model.train(False)
         with tqdm(range(n_episodes), unit='session') as tepoch:
             tepoch.set_description(f'Evaluation')
             for session in tepoch:
                 self.model.train()
                 self.task_sampler.new_session()
-                if session > 0:
-                    self.backup_classifier()
-                    self.model.classifier = nn.Linear(
-                        self.model.classifier.in_features, self.task_sampler.n_way, bias=False).to(
-                        self.device)
                 self.fast_model = copy.deepcopy(self.model)
-                self.warm_up(
-                    scale=None if session == 0 else self.task_sampler.n_way
-                )
                 if session > 0:
                     self.accumulate_classifier()
+                self.warm_up(
+                    session,
+                    scale=None if session == 0 else self.task_sampler.n_way
+                )
 
                 self.fast_adapt()
                 self.model = copy.deepcopy(self.fast_model)
