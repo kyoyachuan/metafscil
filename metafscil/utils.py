@@ -19,3 +19,10 @@ def compute_accuracy(output: torch.Tensor, target: torch.Tensor):
     pred = output.argmax(dim=1, keepdim=True)
     correct = pred.eq(target.view_as(pred)).sum().item()
     return correct / len(target)
+
+
+def cosine_classify(x: torch.Tensor, y: torch.Tensor, temperature: int, normalize: bool = True):
+    if normalize:
+        x = nn.functional.normalize(x, p=2, dim=-1)
+        y = nn.functional.normalize(y, p=2, dim=-1)
+    return nn.functional.linear(x, y, bias=None) * temperature

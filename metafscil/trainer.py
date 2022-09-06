@@ -21,7 +21,7 @@ class Pretrain:
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr,
                                          momentum=0.9, weight_decay=0.0005, nesterov=True)
         self.schelduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[40, 70], gamma=0.1)
-        self.writer = SummaryWriter(f"{args.log_dir}/{args.model}")
+        self.writer = SummaryWriter(f"{args.log_dir}/{args.model_name}")
 
     def train(self, epochs: int = 100):
         for epoch in range(epochs):
@@ -83,7 +83,7 @@ class MetaFSCIL:
         self.loss = nn.CrossEntropyLoss()
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
 
-        self.writer = SummaryWriter(f"{args.log_dir}/{args.model}")
+        self.writer = SummaryWriter(f"{args.log_dir}/{args.model_name}")
 
     def init_classifier(self, base_classes: int = 20):
         self.model.classifier = IncrementalLinear(self.in_features, base_classes, self.device)
@@ -191,7 +191,7 @@ class MetaFSCIL:
                 self.task_sampler.new_session()
                 self.fast_model = copy.deepcopy(self.model)
                 if session > 0:
-                    self.accumulate_classifier()
+                    self.accumulate_classifier(self.task_sampler.n_way)
                 self.warm_up(
                     session,
                     scale=None if session == 0 else self.task_sampler.n_way

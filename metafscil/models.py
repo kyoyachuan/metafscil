@@ -3,6 +3,8 @@ from torch import nn
 from torchvision import models
 import torch.nn.functional as F
 
+from .utils import cosine_classify
+
 
 class IncrementalLinear(nn.Module):
     def __init__(self, in_dim, init_classes, device):
@@ -32,6 +34,13 @@ class IncrementalLinear(nn.Module):
 
     def get_last_layer(self):
         return self.__getattr__(f'fc{self.num_layers - 1}')
+
+    @property
+    def weight(self):
+        w = self.fc0.weight
+        for i in range(1, self.num_layers):
+            w = torch.cat((w, self.__getattr__(f'fc{i}').weight), dim=0)
+        return w
 
 
 class ChannelAttention(nn.Module):
@@ -76,9 +85,11 @@ class SelfAttention(nn.Module):
 
 
 class SelfModulation(nn.Module):
-    def __init__(self, att_mode, num_classes):
+    def __init__(self, att_mode, num_classes, cos_cls=False, temperature=None):
         super(SelfModulation, self).__init__()
         self.att_mode = att_mode
+        self.cos_cls = cos_cls
+        self.temperature = temperature
         self.feature_extractor = models.resnet18()
         self.modulation_1 = SelfAttention(64) if att_mode == 'sfm' else ChannelAttention(64)
         self.modulation_2 = SelfAttention(128) if att_mode == 'sfm' else ChannelAttention(128)
@@ -245,14 +256,24 @@ class SelfModulation(nn.Module):
         x = self.modulation_5(x)
 
         x = torch.flatten(x, 1)
-        x = self.classifier(x, **kwargs)
+
+        if self.cos_cls:
+            if 'layer' in kwargs:
+                w = self.classifier.__getattr__(f'fc{kwargs["layer"]}').weight
+            else:
+                w = self.classifier.weight
+            x = cosine_classify(x, w, self.temperature)
+        else:
+            x = self.classifier(x, **kwargs)
 
         return x
 
 
 class BGM(nn.Module):
-    def __init__(self, num_classes):
+    def __init__(self, num_classes, cos_cls=False, temperature=None):
         super(BGM, self).__init__()
+        self.cos_cls = cos_cls
+        self.temperature = temperature
         self.feature_extractor = models.resnet18()
         self.modulation = models.resnet18()
         self.modulation_fc_1 = nn.Sequential(
@@ -511,17 +532,25 @@ class BGM(nn.Module):
         x = x * torch.sigmoid(x_ref)
 
         x = torch.flatten(x, 1)
-        x = self.classifier(x, **kwargs)
+
+        if self.cos_cls:
+            if 'layer' in kwargs:
+                w = self.classifier.__getattr__(f'fc{kwargs["layer"]}').weight
+            else:
+                w = self.classifier.weight
+            x = cosine_classify(x, w, self.temperature)
+        else:
+            x = self.classifier(x, **kwargs)
 
         return x
 
 
-def get_model(model_str, num_classes):
+def get_model(model_str, num_classes, **kwargs):
     if model_str == 'sfm':
-        return SelfModulation('sfm', num_classes)
+        return SelfModulation('sfm', num_classes, **kwargs)
     elif model_str == 'scm':
-        return SelfModulation('scm', num_classes)
+        return SelfModulation('scm', num_classes, **kwargs)
     elif model_str == 'bgm':
-        return BGM(num_classes)
+        return BGM(num_classes, **kwargs)
     else:
         raise ValueError('Unknown model: {}'.format(model_str))
