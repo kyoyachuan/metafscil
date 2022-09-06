@@ -16,6 +16,8 @@ class Pretrain:
         self.val_loader = val_loader
         self.lr = args.pretrain_lr
         self.device = args.device
+        self.args = args
+        self.best_acc = 0
 
         self.loss = nn.CrossEntropyLoss()
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr,
@@ -26,7 +28,10 @@ class Pretrain:
     def train(self, epochs: int = 100):
         for epoch in range(epochs):
             self.train_epoch(epoch)
-            self.evaluate(epoch)
+            accuracy = self.evaluate(epoch)
+            if accuracy > self.best_acc:
+                self.best_acc = accuracy
+                torch.save(self.model.state_dict(), f'models/{self.args.model_name}/pretrain.pth')
             self.schelduler.step()
 
     def train_epoch(self, epoch):
@@ -70,6 +75,8 @@ class Pretrain:
         self.writer.add_scalar('Pretrain/val_loss', val_loss, epoch)
         self.writer.add_scalar('Pretrain/val_accuracy', val_accuracy, epoch)
 
+        return val_accuracy
+
 
 class MetaFSCIL:
     def __init__(self, model, task_sampler, args):
@@ -95,6 +102,7 @@ class MetaFSCIL:
     def warm_up(self, session, n_steps=20, scale=None):
         optimizer = torch.optim.SGD(self.model.classifier.__getattr__(f"fc{session}").parameters(), lr=0.1)
         self.model.train(False)
+
         for _ in range(n_steps):
             data, target = self.task_sampler.sample_support()
             if scale:
@@ -141,6 +149,7 @@ class MetaFSCIL:
         disable_grad(self.model, ['modulation'])
         optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr)
         self.model.train(False)
+
         for _ in range(n_steps):
             data, target = self.task_sampler.sample_support()
             data, target = data.to(self.device), target.to(self.device)
@@ -168,7 +177,7 @@ class MetaFSCIL:
                 )
 
                 fast_params = self.fast_adapt()
-                loss, acc = self.meta_update(fast_params, session)
+                loss, acc = self.meta_update(fast_params)
                 total_loss += loss
                 total_acc += acc
 
@@ -177,13 +186,12 @@ class MetaFSCIL:
         self.writer.add_scalar('Meta/train_loss', total_loss / self.n_sessions, epoch)
         self.writer.add_scalar('Meta/train_accuracy', total_acc / self.n_sessions, epoch)
 
-    def meta_update(self, params, session):
+    def meta_update(self, params):
         self.model.train(False)
         data, target = self.task_sampler.sample_query()
         data, target = data.to(self.device), target.to(self.device)
         output = self.model(data, params)
         loss = self.loss(output, target)
-        # loss = loss / self.task_sampler.session_n_class
         with torch.no_grad():
             accuracy = compute_accuracy(output, target)
         self.optimizer.zero_grad()

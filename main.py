@@ -50,7 +50,7 @@ def pretrain(args):
     trainer = Pretrain(model, train_loader, val_loader, args)
     trainer.train(args.pretrain_epoch)
 
-    torch.save(model.state_dict(), f'models/{args.model_name}/pretrain.pth')
+    # torch.save(model.state_dict(), f'models/{args.model_name}/pretrain.pth')
 
 
 def metatrain(args):

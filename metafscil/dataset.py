@@ -198,7 +198,7 @@ class EpisodeSampler:
             self.query_imgs += imgs[cls][:]
             self.query_labels += [self.classes.index(cls)] * len(imgs[cls])
 
-        self.support_loader = self._get_loader(self.support_imgs, self.support_labels, min(len(self.support_imgs), 128))
+        self.support_loader = self._get_loader(self.support_imgs, self.support_labels, min(len(self.support_imgs), 256))
         self.query_loader = self._get_loader(self.query_imgs, self.query_labels, 100, transform=False)
 
         self.support_iter = iter(self.support_loader)

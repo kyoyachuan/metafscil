@@ -96,7 +96,7 @@ class SelfModulation(nn.Module):
         self.modulation_3 = SelfAttention(256) if att_mode == 'sfm' else ChannelAttention(256)
         self.modulation_4 = SelfAttention(512) if att_mode == 'sfm' else ChannelAttention(512)
         self.modulation_5 = ChannelAttention(512)
-        self.classifier = nn.Linear(self.feature_extractor.fc.in_features, num_classes)
+        self.classifier = nn.Linear(self.feature_extractor.fc.in_features, num_classes, bias=False)
 
         del self.feature_extractor.fc
 
@@ -301,7 +301,7 @@ class BGM(nn.Module):
             nn.ReLU(),
             nn.Linear(512, 512*512)
         )
-        self.classifier = nn.Linear(self.feature_extractor.fc.in_features, num_classes)
+        self.classifier = nn.Linear(self.feature_extractor.fc.in_features, num_classes, bias=False)
 
         del self.feature_extractor.fc
         del self.modulation.fc
