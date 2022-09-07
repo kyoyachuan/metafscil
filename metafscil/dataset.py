@@ -137,7 +137,7 @@ class SequentialTaskSampler:
 
         self.support_loader = self._get_loader(self.support_imgs, self.support_labels,
                                                min(len(self.support_imgs), 128), shuffle=True)
-        self.query_loader = self._get_loader(self.query_imgs, self.query_labels, self.n_sample_query, shuffle=True)
+        self.query_loader = self._get_loader(self.query_imgs, self.query_labels, self.n_sample_query, shuffle=False)
 
         self.support_iter = iter(self.support_loader)
         self.query_iter = iter(self.query_loader)

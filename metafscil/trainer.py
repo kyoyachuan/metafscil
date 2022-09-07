@@ -188,18 +188,31 @@ class MetaFSCIL:
 
     def meta_update(self, params):
         self.model.train(False)
-        data, target = self.task_sampler.sample_query()
-        data, target = data.to(self.device), target.to(self.device)
-        output = self.model(data, params)
-        loss = self.loss(output, target)
-        with torch.no_grad():
-            accuracy = compute_accuracy(output, target)
         self.optimizer.zero_grad()
         self.model.zero_grad()
-        loss.backward()
+        total_loss = 0
+        total_accuracy = 0
+        for data, target in self.task_sampler.query_loader:
+            data, target = data.to(self.device), target.to(self.device)
+            output = self.model(data, params)
+            loss = self.loss(output, target)
+            total_loss += loss.item()
+            with torch.no_grad():
+                accuracy = compute_accuracy(output, target)
+                total_accuracy += accuracy
+            loss.backward()
+        total_loss /= len(self.task_sampler.query_loader)
+        total_accuracy /= len(self.task_sampler.query_loader)
+        # data, target = self.task_sampler.sample_query()
+        # data, target = data.to(self.device), target.to(self.device)
+        # output = self.model(data, params)
+        # loss = self.loss(output, target)
+        # with torch.no_grad():
+        # accuracy = compute_accuracy(output, target)
+        # loss.backward()
         self.optimizer.step()
 
-        return loss.item(), accuracy
+        return total_loss, total_accuracy
 
     def train(self, epochs):
         for epoch in range(epochs):
