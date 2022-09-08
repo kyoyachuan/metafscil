@@ -94,30 +94,38 @@ class SequentialTaskSampler:
         self.n_class = len(self.classes)
         self.shuffle_classes = self.classes[:]
 
-        self._separate_images()
-
-    def _separate_images(self):
+        # self._separate_images()
         self.support_pools = dict()
         self.query_pools = dict()
-        for cls in self.classes:
-            imgs = self.dict_of_imgs[cls][:]
+
+    # def _separate_images(self):
+    #     self.support_pools = dict()
+    #     self.query_pools = dict()
+    #     for cls in self.classes:
+    #         imgs = self.dict_of_imgs[cls]
+    #         random.shuffle(imgs)
+    #         self.support_pools[cls] = imgs[:self.n_support]
+    #         self.query_pools[cls] = imgs[self.n_support:]
+
+    def new_sequence(self):
+        # self.query_imgs = []
+        # self.query_labels = []
+        random.shuffle(self.shuffle_classes)
+        for cls in self.shuffle_classes:
+            imgs = self.dict_of_imgs[cls]
             random.shuffle(imgs)
             self.support_pools[cls] = imgs[:self.n_support]
             self.query_pools[cls] = imgs[self.n_support:]
-
-    def new_sequence(self):
-        self.query_imgs = []
-        self.query_labels = []
-        random.shuffle(self.shuffle_classes)
-        for cls in self.classes:
-            random.shuffle(self.support_pools[cls])
-            random.shuffle(self.query_pools[cls])
+            # random.shuffle(self.support_pools[cls])
+            # random.shuffle(self.query_pools[cls])
         self.session = -1
 
     def new_session(self):
         self.session += 1
         self.support_imgs = []
         self.support_labels = []
+        self.query_imgs = []
+        self.query_labels = []
         if self.session == 0:
             start_cls = 0
             end_cls = self.n_base_task
@@ -132,6 +140,8 @@ class SequentialTaskSampler:
         for cls in classes:
             self.support_imgs += self.support_pools[cls][:n_support_imgs]
             self.support_labels += [self.shuffle_classes.index(cls)] * n_support_imgs
+        for cls in self.shuffle_classes[:end_cls]:
+            random.shuffle(self.query_pools[cls])
             self.query_imgs += self.query_pools[cls][:self.n_sample_query]
             self.query_labels += [self.shuffle_classes.index(cls)] * self.n_sample_query
 
